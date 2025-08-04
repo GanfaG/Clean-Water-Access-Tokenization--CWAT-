@@ -7,6 +7,7 @@
 (define-constant err-already-exists (err u103))
 (define-constant err-invalid-amount (err u104))
 (define-constant err-insufficient-balance (err u105))
+(define-constant err-emergency-resolved (err u106))
 
 (define-data-var token-name (string-ascii 32) "Clean Water Access Token")
 (define-data-var token-symbol (string-ascii 10) "CWAT")
@@ -15,6 +16,7 @@
 (define-data-var next-pump-id uint u1)
 (define-data-var next-report-id uint u1)
 (define-data-var next-audit-id uint u1)
+(define-data-var next-emergency-id uint u1)
 
 (define-map pump-stations uint {
     location: (string-ascii 100),
@@ -75,6 +77,26 @@
 })
 
 (define-map user-votes {proposal-id: uint, voter: principal} bool)
+
+(define-map emergency-alerts uint {
+    pump-id: uint,
+    reporter: principal,
+    emergency-type: (string-ascii 50),
+    severity-level: uint,
+    description: (string-ascii 300),
+    timestamp: uint,
+    resolved: bool,
+    responder: (optional principal),
+    resolution-time: (optional uint)
+})
+
+(define-map emergency-responders principal {
+    name: (string-ascii 50),
+    contact: (string-ascii 100),
+    active: bool,
+    response-count: uint,
+    average-response-time: uint
+})
 
 (define-public (mint-tokens (recipient principal) (amount uint))
     (begin
@@ -245,6 +267,89 @@
     )
 )
 
+(define-public (register-emergency-responder (name (string-ascii 50)) (contact (string-ascii 100)))
+    (begin
+        (asserts! (is-none (map-get? emergency-responders tx-sender)) err-already-exists)
+        (map-set emergency-responders tx-sender {
+            name: name,
+            contact: contact,
+            active: true,
+            response-count: u0,
+            average-response-time: u0
+        })
+        (ok true)
+    )
+)
+
+(define-public (report-emergency (pump-id uint) (emergency-type (string-ascii 50)) (severity-level uint) (description (string-ascii 300)))
+    (let ((emergency-id (var-get next-emergency-id)))
+        (asserts! (is-some (map-get? pump-stations pump-id)) err-not-found)
+        (asserts! (<= severity-level u5) err-invalid-amount)
+        (asserts! (> severity-level u0) err-invalid-amount)
+        (map-set emergency-alerts emergency-id {
+            pump-id: pump-id,
+            reporter: tx-sender,
+            emergency-type: emergency-type,
+            severity-level: severity-level,
+            description: description,
+            timestamp: burn-block-height,
+            resolved: false,
+            responder: none,
+            resolution-time: none
+        })
+        (var-set next-emergency-id (+ emergency-id u1))
+        (let ((reward-amount (* severity-level u15)))
+            (try! (ft-mint? cwat-token reward-amount tx-sender))
+            (var-set total-supply (+ (var-get total-supply) reward-amount))
+        )
+        (ok emergency-id)
+    )
+)
+
+(define-public (respond-to-emergency (emergency-id uint))
+    (let ((alert (unwrap! (map-get? emergency-alerts emergency-id) err-not-found)))
+        (asserts! (is-some (map-get? emergency-responders tx-sender)) err-unauthorized)
+        (asserts! (not (get resolved alert)) err-emergency-resolved)
+        (asserts! (is-none (get responder alert)) err-already-exists)
+        (map-set emergency-alerts emergency-id (merge alert {responder: (some tx-sender)}))
+        (let ((base-reward u50)
+              (severity-bonus (* (get severity-level alert) u10)))
+            (try! (ft-mint? cwat-token (+ base-reward severity-bonus) tx-sender))
+            (var-set total-supply (+ (var-get total-supply) (+ base-reward severity-bonus)))
+        )
+        (ok true)
+    )
+)
+
+(define-public (resolve-emergency (emergency-id uint))
+    (let ((alert (unwrap! (map-get? emergency-alerts emergency-id) err-not-found))
+          (responder-principal (unwrap! (get responder alert) err-unauthorized)))
+        (asserts! (is-eq tx-sender responder-principal) err-unauthorized)
+        (asserts! (not (get resolved alert)) err-emergency-resolved)
+        (let ((response-time (- burn-block-height (get timestamp alert)))
+              (responder-data (unwrap! (map-get? emergency-responders tx-sender) err-not-found)))
+            (map-set emergency-alerts emergency-id (merge alert {
+                resolved: true,
+                resolution-time: (some response-time)
+            }))
+            (let ((new-count (+ (get response-count responder-data) u1))
+                  (total-time (+ (* (get average-response-time responder-data) (get response-count responder-data)) response-time))
+                  (new-average (/ total-time new-count)))
+                (map-set emergency-responders tx-sender (merge responder-data {
+                    response-count: new-count,
+                    average-response-time: new-average
+                }))
+            )
+            (let ((completion-bonus u25)
+                  (speed-bonus (if (<= response-time u10) u25 u0)))
+                (try! (ft-mint? cwat-token (+ completion-bonus speed-bonus) tx-sender))
+                (var-set total-supply (+ (var-get total-supply) (+ completion-bonus speed-bonus)))
+            )
+        )
+        (ok true)
+    )
+)
+
 (define-read-only (get-pump-station (pump-id uint))
     (map-get? pump-stations pump-id)
 )
@@ -280,4 +385,27 @@
 
 (define-read-only (get-balance (account principal))
     (ft-get-balance cwat-token account)
+)
+
+(define-read-only (get-emergency-alert (emergency-id uint))
+    (map-get? emergency-alerts emergency-id)
+)
+
+(define-read-only (get-emergency-responder (responder principal))
+    (map-get? emergency-responders responder)
+)
+
+(define-read-only (get-active-emergencies (pump-id uint))
+    (let ((emergency-1 (map-get? emergency-alerts u1))
+          (emergency-2 (map-get? emergency-alerts u2))
+          (emergency-3 (map-get? emergency-alerts u3)))
+        {
+            pump-emergencies: pump-id,
+            total-active: (+ 
+                (if (and (is-some emergency-1) (is-eq (get pump-id (unwrap-panic emergency-1)) pump-id) (not (get resolved (unwrap-panic emergency-1)))) u1 u0)
+                (+ (if (and (is-some emergency-2) (is-eq (get pump-id (unwrap-panic emergency-2)) pump-id) (not (get resolved (unwrap-panic emergency-2)))) u1 u0)
+                   (if (and (is-some emergency-3) (is-eq (get pump-id (unwrap-panic emergency-3)) pump-id) (not (get resolved (unwrap-panic emergency-3)))) u1 u0))
+            )
+        }
+    )
 )
