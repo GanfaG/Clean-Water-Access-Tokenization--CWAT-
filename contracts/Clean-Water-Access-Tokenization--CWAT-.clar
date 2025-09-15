@@ -409,3 +409,20 @@
         }
     )
 )
+
+(define-data-var community-fund uint u0)
+
+(define-public (transfer-tokens (recipient principal) (amount uint))
+    (let ((fee (/ amount u100))
+          (transfer-amount (- amount fee)))
+        (asserts! (> amount u0) err-invalid-amount)
+        (asserts! (>= (ft-get-balance cwat-token tx-sender) amount) err-insufficient-balance)
+        (try! (ft-transfer? cwat-token transfer-amount tx-sender recipient))
+        (var-set community-fund (+ (var-get community-fund) fee))
+        (ok true)
+    )
+)
+
+(define-read-only (get-community-fund)
+    (var-get community-fund)
+)
