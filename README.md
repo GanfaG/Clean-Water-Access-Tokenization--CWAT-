@@ -151,3 +151,39 @@ For support and questions, please open an issue on GitHub.
 ---
 
 Built with ❤️ for clean water access worldwide 🌍
+
+## ✨ Key Features
+
+- 🚰 **Pump Station Management**: Register and monitor water pump stations
+- 📊 **Sensor Data Logging**: Record real-time water quality and flow data
+- 👥 **Community Reporting**: Reward users for accurate water quality reports
+- 🔧 **Technician Registry**: Role-based access for certified water technicians
+- 🔍 **Quality Audits**: Professional water quality assessments
+- 🗳️ **DAO Governance**: Community-driven funding decisions for maintenance
+- 💰 **Token Staking**: Earn passive rewards by staking CWAT tokens to support long-term community goals
+
+## 🪙 CWAT Token
+
+The native token used for:
+- 💰 Rewarding accurate community reports (5 CWAT)
+- 📈 Incentivizing sensor data logging (10 CWAT)
+- 🔬 Compensating quality audits (20 CWAT)
+- 🗳️ Voting on DAO proposals (requires 100+ CWAT)
+- 💰 Staking for passive rewards based on amount and duration
+
+### For Community Members
+
+#### Stake Tokens for Rewards
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- stake-tokens u100)
+```
+
+#### Claim Staking Rewards
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- claim-staking-rewards)
+```
+
+#### Unstake Tokens
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- unstake-tokens u50)
+```

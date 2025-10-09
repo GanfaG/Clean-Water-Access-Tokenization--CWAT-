@@ -412,6 +412,60 @@
 
 (define-data-var community-fund uint u0)
 
+(define-map token-stakes principal {
+    amount: uint,
+    start-time: uint,
+    claimed-rewards: uint
+})
+
+(define-public (stake-tokens (amount uint))
+    (let ((current-stake (default-to {amount: u0, start-time: u0, claimed-rewards: u0} (map-get? token-stakes tx-sender))))
+        (asserts! (> amount u0) err-invalid-amount)
+        (asserts! (>= (ft-get-balance cwat-token tx-sender) amount) err-insufficient-balance)
+        (try! (ft-transfer? cwat-token amount tx-sender (as-contract tx-sender)))
+        (map-set token-stakes tx-sender {
+            amount: (+ (get amount current-stake) amount),
+            start-time: (if (is-eq (get start-time current-stake) u0) burn-block-height (get start-time current-stake)),
+            claimed-rewards: (get claimed-rewards current-stake)
+        })
+        (ok true)
+    )
+)
+
+(define-public (unstake-tokens (amount uint))
+    (let ((current-stake (unwrap! (map-get? token-stakes tx-sender) err-not-found)))
+        (asserts! (>= (get amount current-stake) amount) err-insufficient-balance)
+        (asserts! (>= (- burn-block-height (get start-time current-stake)) u1440) err-unauthorized)
+        (try! (as-contract (ft-transfer? cwat-token amount tx-sender tx-sender)))
+        (map-set token-stakes tx-sender {
+            amount: (- (get amount current-stake) amount),
+            start-time: (get start-time current-stake),
+            claimed-rewards: (get claimed-rewards current-stake)
+        })
+        (ok true)
+    )
+)
+
+(define-read-only (calculate-staking-rewards (account principal))
+    (let ((stake (default-to {amount: u0, start-time: u0, claimed-rewards: u0} (map-get? token-stakes account)))
+          (duration (- burn-block-height (get start-time stake)))
+          (base-reward (/ (* (get amount stake) duration) u100000)))
+        (if (> duration u0) base-reward u0)
+    )
+)
+
+(define-public (claim-staking-rewards)
+    (let ((stake (unwrap! (map-get? token-stakes tx-sender) err-not-found))
+          (rewards (calculate-staking-rewards tx-sender))
+          (unclaimed (- rewards (get claimed-rewards stake))))
+        (asserts! (> unclaimed u0) err-invalid-amount)
+        (try! (ft-mint? cwat-token unclaimed tx-sender))
+        (var-set total-supply (+ (var-get total-supply) unclaimed))
+        (map-set token-stakes tx-sender (merge stake {claimed-rewards: rewards}))
+        (ok unclaimed)
+    )
+)
+
 (define-public (transfer-tokens (recipient principal) (amount uint))
     (let ((fee (/ amount u100))
           (transfer-amount (- amount fee)))
@@ -425,4 +479,8 @@
 
 (define-read-only (get-community-fund)
     (var-get community-fund)
+)
+
+(define-read-only (get-stake-info (account principal))
+    (map-get? token-stakes account)
 )
