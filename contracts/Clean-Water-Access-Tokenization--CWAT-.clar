@@ -17,6 +17,7 @@
 (define-data-var next-report-id uint u1)
 (define-data-var next-audit-id uint u1)
 (define-data-var next-emergency-id uint u1)
+(define-data-var next-conservation-id uint u1)
 
 (define-map pump-stations uint {
     location: (string-ascii 100),
@@ -91,12 +92,31 @@
 })
 
 (define-map emergency-responders principal {
-    name: (string-ascii 50),
-    contact: (string-ascii 100),
-    active: bool,
-    response-count: uint,
-    average-response-time: uint
-})
+     name: (string-ascii 50),
+     contact: (string-ascii 100),
+     active: bool,
+     response-count: uint,
+     average-response-time: uint
+ })
+
+(define-map conservation-programs uint {
+     pump-id: uint,
+     title: (string-ascii 100),
+     description: (string-ascii 300),
+     target-reduction: uint,
+     current-reduction: uint,
+     start-date: uint,
+     end-date: uint,
+     active: bool,
+     participants: uint,
+     total-rewards: uint
+ })
+
+(define-map conservation-participants {program-id: uint, participant: principal} {
+     joined-at: uint,
+     contributions: uint,
+     claimed-rewards: uint
+ })
 
 (define-public (mint-tokens (recipient principal) (amount uint))
     (begin
@@ -482,5 +502,93 @@
 )
 
 (define-read-only (get-stake-info (account principal))
-    (map-get? token-stakes account)
-)
+     (map-get? token-stakes account)
+ )
+
+(define-public (create-conservation-program (pump-id uint) (title (string-ascii 100)) (description (string-ascii 300)) (target-reduction uint) (duration-blocks uint))
+     (let ((program-id (var-get next-conservation-id)))
+         (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+         (asserts! (is-some (map-get? pump-stations pump-id)) err-not-found)
+         (asserts! (> target-reduction u0) err-invalid-amount)
+         (asserts! (> duration-blocks u0) err-invalid-amount)
+         (map-set conservation-programs program-id {
+             pump-id: pump-id,
+             title: title,
+             description: description,
+             target-reduction: target-reduction,
+             current-reduction: u0,
+             start-date: burn-block-height,
+             end-date: (+ burn-block-height duration-blocks),
+             active: true,
+             participants: u0,
+             total-rewards: u0
+         })
+         (var-set next-conservation-id (+ program-id u1))
+         (ok program-id)
+     )
+ )
+
+(define-public (join-conservation-program (program-id uint))
+     (let ((program (unwrap! (map-get? conservation-programs program-id) err-not-found)))
+         (asserts! (get active program) err-unauthorized)
+         (asserts! (< burn-block-height (get end-date program)) err-unauthorized)
+         (asserts! (is-none (map-get? conservation-participants {program-id: program-id, participant: tx-sender})) err-already-exists)
+         (map-set conservation-participants {program-id: program-id, participant: tx-sender} {
+             joined-at: burn-block-height,
+             contributions: u0,
+             claimed-rewards: u0
+         })
+         (map-set conservation-programs program-id (merge program {participants: (+ (get participants program) u1)}))
+         (ok true)
+     )
+ )
+
+(define-public (log-conservation-contribution (program-id uint) (water-saved uint))
+     (let ((program (unwrap! (map-get? conservation-programs program-id) err-not-found))
+           (participant (unwrap! (map-get? conservation-participants {program-id: program-id, participant: tx-sender}) err-not-found)))
+         (asserts! (get active program) err-unauthorized)
+         (asserts! (< burn-block-height (get end-date program)) err-unauthorized)
+         (asserts! (> water-saved u0) err-invalid-amount)
+         (map-set conservation-participants {program-id: program-id, participant: tx-sender} (merge participant {contributions: (+ (get contributions participant) water-saved)}))
+         (map-set conservation-programs program-id (merge program {current-reduction: (+ (get current-reduction program) water-saved)}))
+         (let ((reward-amount (/ water-saved u10)))
+             (try! (ft-mint? cwat-token reward-amount tx-sender))
+             (var-set total-supply (+ (var-get total-supply) reward-amount))
+             (map-set conservation-programs program-id (merge program {total-rewards: (+ (get total-rewards program) reward-amount)}))
+         )
+         (ok true)
+     )
+ )
+
+(define-public (claim-conservation-rewards (program-id uint))
+     (let ((program (unwrap! (map-get? conservation-programs program-id) err-not-found))
+           (participant (unwrap! (map-get? conservation-participants {program-id: program-id, participant: tx-sender}) err-not-found))
+           (contribution-share (/ (* (get contributions participant) u100) (get current-reduction program)))
+           (bonus-reward (if (>= contribution-share u20) (/ (* (get total-rewards program) contribution-share) u100) u0))
+           (total-reward (+ (get claimed-rewards participant) bonus-reward)))
+         (asserts! (>= burn-block-height (get end-date program)) err-unauthorized)
+         (asserts! (> bonus-reward u0) err-invalid-amount)
+         (try! (ft-mint? cwat-token bonus-reward tx-sender))
+         (var-set total-supply (+ (var-get total-supply) bonus-reward))
+         (map-set conservation-participants {program-id: program-id, participant: tx-sender} (merge participant {claimed-rewards: total-reward}))
+         (ok bonus-reward)
+     )
+ )
+
+(define-public (end-conservation-program (program-id uint))
+     (let ((program (unwrap! (map-get? conservation-programs program-id) err-not-found)))
+         (asserts! (is-eq tx-sender contract-owner) err-owner-only)
+         (asserts! (get active program) err-unauthorized)
+         (asserts! (>= burn-block-height (get end-date program)) err-unauthorized)
+         (map-set conservation-programs program-id (merge program {active: false}))
+         (ok true)
+     )
+ )
+
+(define-read-only (get-conservation-program (program-id uint))
+     (map-get? conservation-programs program-id)
+ )
+
+(define-read-only (get-conservation-participant (program-id uint) (participant principal))
+     (map-get? conservation-participants {program-id: program-id, participant: participant})
+ )

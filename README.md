@@ -161,6 +161,7 @@ Built with ❤️ for clean water access worldwide 🌍
 - 🔍 **Quality Audits**: Professional water quality assessments
 - 🗳️ **DAO Governance**: Community-driven funding decisions for maintenance
 - 💰 **Token Staking**: Earn passive rewards by staking CWAT tokens to support long-term community goals
+- 💧 **Water Conservation Programs**: Community-driven initiatives to reduce water usage with gamified rewards and collective goals
 
 ## 🪙 CWAT Token
 
@@ -170,6 +171,7 @@ The native token used for:
 - 🔬 Compensating quality audits (20 CWAT)
 - 🗳️ Voting on DAO proposals (requires 100+ CWAT)
 - 💰 Staking for passive rewards based on amount and duration
+- 💧 Conservation rewards for water-saving contributions (0.1 CWAT per unit saved)
 
 ### For Community Members
 
@@ -184,6 +186,20 @@ The native token used for:
 ```
 
 #### Unstake Tokens
+#### Join Conservation Program
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- join-conservation-program u1)
+```
+
+#### Log Water Conservation Contribution
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- log-conservation-contribution u1 u100)
+```
+
+#### Claim Conservation Rewards
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- claim-conservation-rewards u1)
+```
 ```clarity
 (contract-call? .Clean-Water-Access-Tokenization--CWAT- unstake-tokens u50)
 ```
