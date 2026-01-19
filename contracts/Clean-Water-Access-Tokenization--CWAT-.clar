@@ -118,6 +118,8 @@
      claimed-rewards: uint
  })
 
+(define-map pump-maintenance-funds uint uint)
+
 (define-public (mint-tokens (recipient principal) (amount uint))
     (begin
         (asserts! (is-eq tx-sender contract-owner) err-owner-only)

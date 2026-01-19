@@ -200,6 +200,16 @@ The native token used for:
 ```clarity
 (contract-call? .Clean-Water-Access-Tokenization--CWAT- claim-conservation-rewards u1)
 ```
+
+#### Donate to Pump Maintenance Fund
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- donate-to-pump-fund u1 u50)
+```
+
+#### Check Pump Fund Balance
+```clarity
+(contract-call? .Clean-Water-Access-Tokenization--CWAT- get-pump-fund-balance u1)
+```
 ```clarity
 (contract-call? .Clean-Water-Access-Tokenization--CWAT- unstake-tokens u50)
 ```
